@@ -41,21 +41,32 @@ def grade_candidate(gemini_client, resume_text: str, job_description: str) -> di
         resume_text=resume_text
     )
     
+    # Use JSON mode for guaranteed valid JSON output
     response = gemini_client.models.generate_content(
         model="gemini-2.0-flash",
-        contents=prompt
+        contents=prompt,
+        config={
+            "response_mime_type": "application/json",
+        }
     )
     
-    # Parse the JSON response
+    # With JSON mode, response is guaranteed valid JSON
     response_text = response.text.strip()
-    # Handle potential markdown code blocks
-    if response_text.startswith("```"):
-        response_text = response_text.split("```")[1]
-        if response_text.startswith("json"):
-            response_text = response_text[4:]
-        response_text = response_text.strip()
     
-    return json.loads(response_text)
+    try:
+        return json.loads(response_text)
+    except json.JSONDecodeError as e:
+        # Fallback: try to extract score with regex if JSON parsing fails
+        import re
+        score_match = re.search(r'"score"\s*:\s*(\d+)', response_text)
+        reasoning_match = re.search(r'"reasoning"\s*:\s*"([^"]+)"', response_text)
+        
+        if score_match:
+            return {
+                "score": int(score_match.group(1)),
+                "reasoning": reasoning_match.group(1) if reasoning_match else "Score extracted from malformed response"
+            }
+        raise e  # Re-raise if we can't extract anything
 
 
 def update_candidate_grade(supabase, candidate_id: int, score: int, reasoning: str, existing_metadata: dict):
