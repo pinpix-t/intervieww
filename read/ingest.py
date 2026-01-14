@@ -8,7 +8,12 @@ import re
 from pathlib import Path
 from email.utils import parseaddr
 
-from dotenv import load_dotenv
+# dotenv is optional - Railway provides env vars directly
+try:
+    from dotenv import load_dotenv
+except ImportError:
+    def load_dotenv():
+        pass  # No-op in production
 from supabase import create_client
 from google import genai
 

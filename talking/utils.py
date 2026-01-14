@@ -5,7 +5,12 @@ import os
 import json
 from pathlib import Path
 
-from dotenv import load_dotenv
+# dotenv is optional - Railway provides env vars directly
+try:
+    from dotenv import load_dotenv
+except ImportError:
+    def load_dotenv():
+        pass  # No-op in production
 from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import InstalledAppFlow
