@@ -16,6 +16,9 @@ COPY . .
 # Set Python to run unbuffered (see logs immediately)
 ENV PYTHONUNBUFFERED=1
 
+# Set working directory to talking folder
+WORKDIR /app/talking
+
 # Run the commander
-CMD ["python", "talking/listener.py"]
+CMD ["python", "listener.py"]
 
