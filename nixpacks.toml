@@ -1,12 +1,15 @@
 # Nixpacks configuration for Railway
-# Explicitly tells Railway this is a Python project
+# Uses virtual environment to avoid Nix managed Python issues
 
 [phases.setup]
-nixPkgs = ["python311", "python311Packages.pip"]
+nixPkgs = ["python311"]
 
 [phases.install]
-cmds = ["pip install -r requirements.txt"]
+cmds = [
+    "python -m venv /app/venv",
+    "/app/venv/bin/pip install --upgrade pip",
+    "/app/venv/bin/pip install -r requirements.txt"
+]
 
 [start]
-cmd = "cd talking && python listener.py"
-
+cmd = "cd talking && /app/venv/bin/python listener.py"
