@@ -137,22 +137,28 @@ def analyze_visa_status(gemini_client, reply_text: str) -> bool:
     """Use Gemini to analyze if candidate has valid visa."""
     prompt = VISA_CHECK_PROMPT.format(reply_text=reply_text)
     
+    # Use JSON mode for guaranteed valid JSON output
     response = gemini_client.models.generate_content(
         model="gemini-2.0-flash",
-        contents=prompt
+        contents=prompt,
+        config={
+            "response_mime_type": "application/json",
+        }
     )
     
     response_text = response.text.strip()
     
-    # Handle potential markdown code blocks
-    if response_text.startswith("```"):
-        response_text = response_text.split("```")[1]
-        if response_text.startswith("json"):
-            response_text = response_text[4:]
-        response_text = response_text.strip()
-    
-    result = json.loads(response_text)
-    return result.get("has_valid_visa", False)
+    try:
+        result = json.loads(response_text)
+        return result.get("has_valid_visa", False)
+    except json.JSONDecodeError:
+        # Fallback: look for indicators in the raw response
+        lower = response_text.lower()
+        if "true" in lower or "valid" in lower or "yes" in lower:
+            log("WARN", f"JSON parse failed, but detected positive visa status from text")
+            return True
+        log("WARN", f"JSON parse failed, defaulting to invalid visa. Raw: {response_text[:100]}")
+        return False
 
 
 def create_email_message(to_email: str, subject: str, body: str) -> dict:
