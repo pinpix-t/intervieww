@@ -1,5 +1,6 @@
 # Nixpacks configuration for Railway
 # Uses virtual environment to avoid Nix managed Python issues
+# CACHE BUST: v3 - 2026-01-14T18:30
 
 [phases.setup]
 nixPkgs = ["python311"]
@@ -8,7 +9,7 @@ nixPkgs = ["python311"]
 cmds = [
     "python -m venv /app/venv",
     "/app/venv/bin/pip install --upgrade pip",
-    "/app/venv/bin/pip install -r requirements.txt"
+    "/app/venv/bin/pip install -r requirements.txt --no-cache-dir"
 ]
 
 [start]
