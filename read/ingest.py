@@ -96,6 +96,57 @@ def parse_name_from_subject(subject: str) -> str | None:
     return None
 
 
+def get_email_body(gmail, msg_id) -> str:
+    """Extract the plain text body from an email."""
+    msg = gmail.users().messages().get(userId="me", id=msg_id, format="full").execute()
+    
+    payload = msg.get("payload", {})
+    
+    # Check for plain text body directly
+    if payload.get("mimeType") == "text/plain":
+        data = payload.get("body", {}).get("data", "")
+        if data:
+            return base64.urlsafe_b64decode(data).decode("utf-8")
+    
+    # Check parts for multipart messages
+    parts = payload.get("parts", [])
+    for part in parts:
+        if part.get("mimeType") == "text/plain":
+            data = part.get("body", {}).get("data", "")
+            if data:
+                return base64.urlsafe_b64decode(data).decode("utf-8")
+    
+    # Try snippet as fallback
+    return msg.get("snippet", "")
+
+
+def parse_candidate_email_from_body(body: str) -> str | None:
+    """Extract candidate's actual email from Betterteam email body."""
+    if not body:
+        return None
+    
+    # Common patterns in Betterteam emails:
+    # "Email: candidate@example.com"
+    # "email: candidate@example.com"
+    # "E-mail: candidate@example.com"
+    patterns = [
+        r"[Ee]-?mail:\s*([a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,})",
+        r"Email Address:\s*([a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,})",
+        # Generic email pattern - find any email that's not betterteam/noreply
+        r"([a-zA-Z0-9._%+-]+@(?!betterteam|noreply)[a-zA-Z0-9.-]+\.[a-zA-Z]{2,})",
+    ]
+    
+    for pattern in patterns:
+        match = re.search(pattern, body)
+        if match:
+            email = match.group(1).strip()
+            # Skip common system emails
+            if not any(skip in email.lower() for skip in ['noreply', 'betterteam', 'no-reply']):
+                return email
+    
+    return None
+
+
 def download_pdf(gmail, msg_id, filename_prefix):
     msg = gmail.users().messages().get(userId="me", id=msg_id, format="full").execute()
     parts = msg.get("payload", {}).get("parts", [])
@@ -197,12 +248,8 @@ def save_candidate(supabase, email, name, resume_text, gmail_msg_id, job_id, job
 
 # --- Main Processing ---
 def process_email(gmail, supabase, msg_id):
-    email, sender_name = get_sender(gmail, msg_id)
-    log("INFO", f"Processing {email}...")
-
-    if not email:
-        log("WARN", "No email address found, skipping")
-        return
+    sender_email, sender_name = get_sender(gmail, msg_id)
+    log("INFO", f"Processing email from {sender_email}...")
 
     # --- Job Router Logic ---
     subject = get_email_subject(gmail, msg_id)
@@ -212,11 +259,25 @@ def process_email(gmail, supabase, msg_id):
         log("ERROR", f"Could not parse job title from subject: '{subject}'")
         return
     
-    # Parse candidate name from subject (cleaner than sender name)
+    # Parse candidate name from subject
     name = parse_name_from_subject(subject)
     if not name:
         log("WARN", f"Could not parse name from subject, using sender name: {sender_name}")
         name = sender_name
+    
+    # --- Extract REAL candidate email from body ---
+    # Betterteam emails come from noreply@betterteam.com, but contain the actual email in body
+    email_body = get_email_body(gmail, msg_id)
+    candidate_email = parse_candidate_email_from_body(email_body)
+    
+    if candidate_email:
+        log("INFO", f"Found candidate email in body: {candidate_email}")
+        email = candidate_email
+    else:
+        # Fallback to sender if we can't find email in body
+        log("WARN", f"Could not find candidate email in body, using sender: {sender_email}")
+        email = sender_email
+    # --- End email extraction ---
     
     job = lookup_job(supabase, job_title)
     
@@ -224,7 +285,7 @@ def process_email(gmail, supabase, msg_id):
         log("ERROR", f"CRITICAL: Job '{job_title}' not found in DB. Skipping candidate.")
         return
     
-    log("INFO", f"Matched job: {job_title} (ID: {job['id']}) | Candidate: {name}")
+    log("INFO", f"Matched job: {job_title} (ID: {job['id']}) | Candidate: {name} <{email}>")
     # --- End Job Router ---
 
     if candidate_exists(supabase, email):
@@ -232,7 +293,7 @@ def process_email(gmail, supabase, msg_id):
         mark_as_read(gmail, msg_id)
         return
 
-    filepath = download_pdf(gmail, msg_id, email)
+    filepath = download_pdf(gmail, msg_id, name or email)
     if not filepath:
         log("WARN", f"No PDF attachment for {email}, skipping")
         return
@@ -244,7 +305,7 @@ def process_email(gmail, supabase, msg_id):
     # Cleanup downloaded file
     filepath.unlink(missing_ok=True)
     
-    log("INFO", f"Saved {email} for job: {job_title}")
+    log("INFO", f"Saved {name} <{email}> for job: {job_title}")
 
 
 def run_ingest() -> int:
