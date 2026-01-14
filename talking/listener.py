@@ -9,7 +9,7 @@ from utils import get_supabase_client, get_gmail_service, get_gemini_client, log
 
 # --- Configuration ---
 COMPANY_NAME = "Printerpix"
-INTERVIEW_BASE_URL = "http://localhost:3000/interview"  # Change to your deployed URL in production
+INTERVIEW_BASE_URL = "https://intervieww-fw4n.vercel.app/interview"
 
 VISA_CHECK_PROMPT = """The candidate was asked 'Are you on an Employer Visa or a Personal Visa?'.
 

@@ -9,7 +9,7 @@ from utils import get_supabase_client, get_gmail_service, log
 # --- Configuration ---
 COMPANY_NAME = "Printerpix"
 MIN_SCORE = 70
-INTERVIEW_BASE_URL = "http://localhost:3000/interview"  # Change to deployed URL in production
+INTERVIEW_BASE_URL = "https://intervieww-fw4n.vercel.app/interview"
 
 # Dubai questionnaire email
 DUBAI_EMAIL_SUBJECT = f"Quick Questions regarding your application to {COMPANY_NAME}"
