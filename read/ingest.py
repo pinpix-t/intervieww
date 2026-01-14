@@ -147,13 +147,17 @@ def parse_candidate_email_from_body(body: str) -> str | None:
     return None
 
 
-def download_pdf(gmail, msg_id, filename_prefix):
+def download_resume(gmail, msg_id, filename_prefix):
+    """Download resume attachment (PDF, DOCX, DOC)."""
     msg = gmail.users().messages().get(userId="me", id=msg_id, format="full").execute()
     parts = msg.get("payload", {}).get("parts", [])
+    
+    # Supported resume formats
+    valid_extensions = ('.pdf', '.docx', '.doc')
 
     for part in parts:
         filename = part.get("filename", "")
-        if not filename.lower().endswith(".pdf"):
+        if not filename.lower().endswith(valid_extensions):
             continue
 
         att_id = part.get("body", {}).get("attachmentId")
@@ -164,8 +168,10 @@ def download_pdf(gmail, msg_id, filename_prefix):
             userId="me", messageId=msg_id, id=att_id
         ).execute()
 
+        # Keep original extension
+        ext = Path(filename).suffix.lower()
         safe_name = re.sub(r"[^\w\-_.]", "_", filename_prefix)
-        filepath = DOWNLOADS_DIR / f"{safe_name}_resume.pdf"
+        filepath = DOWNLOADS_DIR / f"{safe_name}_resume{ext}"
         filepath.write_bytes(base64.urlsafe_b64decode(attachment["data"]))
         return filepath
 
@@ -293,9 +299,9 @@ def process_email(gmail, supabase, msg_id):
         mark_as_read(gmail, msg_id)
         return
 
-    filepath = download_pdf(gmail, msg_id, name or email)
+    filepath = download_resume(gmail, msg_id, name or email)
     if not filepath:
-        log("WARN", f"No PDF attachment for {email}, skipping")
+        log("WARN", f"No resume attachment (PDF/DOCX/DOC) for {email}, skipping")
         return
 
     resume_text = parse_resume(filepath)
