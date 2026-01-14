@@ -1,15 +1,46 @@
 #!/usr/bin/env python3
-"""The Visa Gatekeeper: Watches for candidate replies and processes visa status."""
+"""
+The Commander: Runs the full recruiting pipeline continuously.
 
+This is the main entry point for Railway deployment.
+It runs all scripts in sequence on a loop:
+1. Check for email replies (visa gatekeeper)
+2. Ingest new applications
+3. Grade candidates
+4. Send outreach emails
+
+Then sleeps and repeats.
+"""
+
+import sys
+import time
 import json
 import base64
+from pathlib import Path
 from email.mime.text import MIMEText
 
+# Add read/ directory to path for importing ingest
+sys.path.insert(0, str(Path(__file__).parent.parent / "read"))
+
 from utils import get_supabase_client, get_gmail_service, get_gemini_client, log
+
+# Import the other modules' run functions
+from grader import run_grader
+from mailer import run_mailer
+
+# For ingest, we need to handle the import differently since it's in a different folder
+try:
+    from ingest import run_ingest
+except ImportError:
+    # If import fails, define a stub that logs the error
+    def run_ingest():
+        log("WARN", "Could not import ingest module - skipping")
+        return 0
 
 # --- Configuration ---
 COMPANY_NAME = "Printerpix"
 INTERVIEW_BASE_URL = "https://intervieww-fw4n.vercel.app/interview"
+LOOP_INTERVAL_SECONDS = 60  # How often to run the pipeline
 
 VISA_CHECK_PROMPT = """The candidate was asked 'Are you on an Employer Visa or a Personal Visa?'.
 
@@ -43,6 +74,7 @@ Best of luck in your job search!
 """
 
 
+# --- Visa Gatekeeper Functions ---
 def fetch_questionnaire_candidates(supabase):
     """Fetch candidates who were sent the questionnaire."""
     result = (
@@ -160,8 +192,12 @@ def update_candidate_status(supabase, candidate_id: int, status: str):
     }).eq("id", candidate_id).execute()
 
 
-def main():
-    log("INFO", "Starting visa gatekeeper...")
+def run_listener() -> int:
+    """
+    Check for email replies from candidates (visa gatekeeper).
+    Returns the number of candidates processed.
+    """
+    log("INFO", "Checking for candidate replies...")
     
     supabase = get_supabase_client()
     gmail_service = get_gmail_service()
@@ -171,10 +207,9 @@ def main():
     log("INFO", f"Found {len(candidates)} candidate(s) awaiting reply")
     
     if not candidates:
-        log("INFO", "No candidates to process")
-        return
+        return 0
     
-    processed, skipped = 0, 0
+    processed = 0
     
     for candidate in candidates:
         try:
@@ -185,7 +220,6 @@ def main():
             
             if not interview_token:
                 log("WARN", f"No interview_token for {email}, skipping")
-                skipped += 1
                 continue
             
             # Search for unread replies from this candidate
@@ -193,7 +227,6 @@ def main():
             
             if not messages:
                 # No reply yet - skip silently
-                skipped += 1
                 continue
             
             # Process the first unread message
@@ -202,7 +235,6 @@ def main():
             
             if not reply_text:
                 log("WARN", f"Empty reply from {email}, skipping")
-                skipped += 1
                 continue
             
             log("INFO", f"Processing reply from {email}...")
@@ -213,7 +245,7 @@ def main():
             if has_valid_visa:
                 send_approval_email(gmail_service, email, full_name, interview_token)
                 update_candidate_status(supabase, candidate_id, "INVITE_SENT")
-                log("INFO", f"Processed {email}: Visa Valid? True - Invite sent with token")
+                log("INFO", f"Processed {email}: Visa Valid? True - Invite sent")
             else:
                 send_rejection_email(gmail_service, email, full_name)
                 update_candidate_status(supabase, candidate_id, "REJECTED_VISA")
@@ -226,9 +258,97 @@ def main():
         except Exception as e:
             log("ERROR", f"Failed to process {candidate.get('email', 'unknown')}: {e}")
     
-    log("INFO", f"Gatekeeper complete: {processed} processed, {skipped} awaiting reply")
+    log("INFO", f"Reply check complete: {processed} processed")
+    return processed
+
+
+def run_pipeline_cycle():
+    """
+    Run one complete cycle of the recruiting pipeline.
+    
+    Order:
+    1. Check for replies (visa gatekeeper) - process waiting candidates first
+    2. Ingest new applications from email
+    3. Grade new candidates with AI
+    4. Send outreach to graded candidates
+    """
+    log("INFO", "=" * 50)
+    log("INFO", "Starting pipeline cycle...")
+    log("INFO", "=" * 50)
+    
+    # Step 1: Check for replies to questionnaires
+    try:
+        replies_processed = run_listener()
+        log("INFO", f"Step 1 (Listener): {replies_processed} replies processed")
+    except Exception as e:
+        log("ERROR", f"Step 1 (Listener) failed: {e}")
+    
+    # Step 2: Ingest new applications
+    try:
+        ingested = run_ingest()
+        log("INFO", f"Step 2 (Ingest): {ingested} applications ingested")
+    except Exception as e:
+        log("ERROR", f"Step 2 (Ingest) failed: {e}")
+    
+    # Step 3: Grade candidates
+    try:
+        graded = run_grader()
+        log("INFO", f"Step 3 (Grader): {graded} candidates graded")
+    except Exception as e:
+        log("ERROR", f"Step 3 (Grader) failed: {e}")
+    
+    # Step 4: Send outreach
+    try:
+        dubai, invites = run_mailer()
+        log("INFO", f"Step 4 (Mailer): {dubai} questionnaires, {invites} invites sent")
+    except Exception as e:
+        log("ERROR", f"Step 4 (Mailer) failed: {e}")
+    
+    log("INFO", "Pipeline cycle complete!")
+
+
+def main():
+    """
+    Main entry point - runs the pipeline continuously.
+    This is what Railway will execute.
+    """
+    log("INFO", "=" * 60)
+    log("INFO", "🚀 RECRUITING BOT COMMANDER STARTING")
+    log("INFO", f"Loop interval: {LOOP_INTERVAL_SECONDS} seconds")
+    log("INFO", "=" * 60)
+    
+    # Test connections on startup
+    try:
+        log("INFO", "Testing Supabase connection...")
+        supabase = get_supabase_client()
+        log("INFO", "✓ Supabase OK")
+        
+        log("INFO", "Testing Gmail connection...")
+        gmail = get_gmail_service()
+        log("INFO", "✓ Gmail OK")
+        
+        log("INFO", "Testing Gemini connection...")
+        gemini = get_gemini_client()
+        log("INFO", "✓ Gemini OK")
+        
+    except Exception as e:
+        log("ERROR", f"Startup check failed: {e}")
+        log("ERROR", "Fix the above error and restart.")
+        return
+    
+    log("INFO", "All connections verified. Starting main loop...")
+    
+    # Main loop
+    while True:
+        try:
+            run_pipeline_cycle()
+        except Exception as e:
+            log("ERROR", f"Pipeline cycle crashed: {e}")
+            log("INFO", "Will retry on next cycle...")
+        
+        log("INFO", f"Sleeping for {LOOP_INTERVAL_SECONDS} seconds...")
+        time.sleep(LOOP_INTERVAL_SECONDS)
 
 
 if __name__ == "__main__":
     main()
-

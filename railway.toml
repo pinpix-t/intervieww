@@ -1,0 +1,9 @@
+# Railway configuration
+
+[build]
+builder = "nixpacks"
+
+[deploy]
+startCommand = "cd talking && python listener.py"
+restartPolicyType = "always"
+

@@ -2,55 +2,40 @@
 """Recruiting bot: fetches application emails, parses resumes with Gemini, saves to Supabase."""
 
 import os
+import sys
 import base64
 import re
 from pathlib import Path
 from email.utils import parseaddr
 
 from dotenv import load_dotenv
-from google.auth.transport.requests import Request
-from google.oauth2.credentials import Credentials
-from google_auth_oauthlib.flow import InstalledAppFlow
-from googleapiclient.discovery import build
 from supabase import create_client
 from google import genai
+
+# Add parent directory to path so we can import from talking/utils.py
+sys.path.insert(0, str(Path(__file__).parent.parent / "talking"))
+
+from utils import get_gmail_service, get_supabase_client, get_gemini_client, log
 
 load_dotenv()
 
 # --- Configuration ---
-GMAIL_SCOPES = ["https://www.googleapis.com/auth/gmail.modify"]
 GMAIL_QUERY = "label:Applications is:unread"
-DOWNLOADS_DIR = Path("downloads")
+DOWNLOADS_DIR = Path(__file__).parent / "downloads"
 
-SUPABASE_URL = os.getenv("SUPABASE_URL")
-SUPABASE_KEY = os.getenv("SUPABASE_KEY")
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
-
-# Configure Gemini client
-gemini_client = genai.Client(api_key=GEMINI_API_KEY)
+# Get Gemini client (will be initialized when needed)
+_gemini_client = None
 
 
-def log(level: str, msg: str):
-    print(f"[{level}] {msg}")
+def get_gemini():
+    """Lazy-load the Gemini client."""
+    global _gemini_client
+    if _gemini_client is None:
+        _gemini_client = get_gemini_client()
+    return _gemini_client
 
 
 # --- Gmail ---
-def authenticate_gmail():
-    creds = None
-    if os.path.exists("token.json"):
-        creds = Credentials.from_authorized_user_file("token.json", GMAIL_SCOPES)
-
-    if not creds or not creds.valid:
-        if creds and creds.expired and creds.refresh_token:
-            creds.refresh(Request())
-        else:
-            flow = InstalledAppFlow.from_client_secrets_file("credentials.json", GMAIL_SCOPES)
-            creds = flow.run_local_server(port=0)
-        Path("token.json").write_text(creds.to_json())
-
-    return build("gmail", "v1", credentials=creds)
-
-
 def fetch_unread_emails(gmail):
     result = gmail.users().messages().list(userId="me", q=GMAIL_QUERY).execute()
     return result.get("messages", [])
@@ -140,6 +125,8 @@ def mark_as_read(gmail, msg_id):
 # --- Resume Parsing with Gemini ---
 def parse_resume(filepath):
     log("INFO", f"Parsing resume with Gemini: {filepath}")
+    
+    gemini_client = get_gemini()
     
     # Upload file to Gemini
     uploaded_file = gemini_client.files.upload(file=filepath)
@@ -255,20 +242,22 @@ def process_email(gmail, supabase, msg_id):
     log("INFO", f"Saved {email} for job: {job_title}")
 
 
-def main():
-    if not all([SUPABASE_URL, SUPABASE_KEY, GEMINI_API_KEY]):
-        log("ERROR", "Missing env vars: SUPABASE_URL, SUPABASE_KEY, GEMINI_API_KEY")
-        return
-
-    gmail = authenticate_gmail()
-    supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
+def run_ingest() -> int:
+    """
+    Main ingest function - can be called from other modules.
+    Returns the number of emails processed.
+    """
+    log("INFO", "Starting email ingestion...")
+    
+    gmail = get_gmail_service()
+    supabase = get_supabase_client()
     DOWNLOADS_DIR.mkdir(exist_ok=True)
 
     messages = fetch_unread_emails(gmail)
     log("INFO", f"Found {len(messages)} unread application(s)")
 
     if not messages:
-        return
+        return 0
 
     success, failed = 0, 0
     for msg in messages:
@@ -279,7 +268,13 @@ def main():
             log("ERROR", f"Failed to process {msg['id']}: {e}")
             failed += 1
 
-    log("INFO", f"Complete: {success} succeeded, {failed} failed")
+    log("INFO", f"Ingestion complete: {success} succeeded, {failed} failed")
+    return success
+
+
+def main():
+    """Entry point when run directly."""
+    run_ingest()
 
 
 if __name__ == "__main__":

@@ -117,7 +117,11 @@ def update_candidate_status(supabase, candidate_id: int, status: str):
     }).eq("id", candidate_id).execute()
 
 
-def main():
+def run_mailer() -> tuple[int, int]:
+    """
+    Main mailer function - can be called from other modules.
+    Returns tuple of (dubai_questionnaires_sent, interview_invites_sent).
+    """
     log("INFO", "Starting outreach to top candidates...")
     
     supabase = get_supabase_client()
@@ -128,7 +132,7 @@ def main():
     
     if not candidates:
         log("INFO", "No candidates to contact")
-        return
+        return (0, 0)
     
     dubai_sent, invites_sent, failed = 0, 0, 0
     
@@ -166,6 +170,12 @@ def main():
             failed += 1
     
     log("INFO", f"Outreach complete: {dubai_sent} Dubai questionnaires, {invites_sent} interview invites, {failed} failed")
+    return (dubai_sent, invites_sent)
+
+
+def main():
+    """Entry point when run directly."""
+    run_mailer()
 
 
 if __name__ == "__main__":
