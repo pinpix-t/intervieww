@@ -152,13 +152,35 @@ def analyze_visa_status(gemini_client, reply_text: str) -> bool:
         result = json.loads(response_text)
         return result.get("has_valid_visa", False)
     except json.JSONDecodeError:
-        # Fallback: look for indicators in the raw response
-        lower = response_text.lower()
-        if "true" in lower or "valid" in lower or "yes" in lower:
-            log("WARN", f"JSON parse failed, but detected positive visa status from text")
-            return True
-        log("WARN", f"JSON parse failed, defaulting to invalid visa. Raw: {response_text[:100]}")
-        return False
+        # Fallback: check the CANDIDATE'S REPLY (not Gemini's response) for valid visa keywords
+        log("WARN", f"Gemini JSON parse failed. Checking candidate reply directly...")
+        candidate_reply_lower = reply_text.lower()
+        
+        # Valid visa keywords
+        valid_keywords = [
+            "golden visa", "gold visa", "personal visa", "freelance visa",
+            "investor visa", "family visa", "green card", "permanent resident",
+            "citizen", "national", "residency", "work permit"
+        ]
+        
+        # Invalid visa keywords (check these first)
+        invalid_keywords = [
+            "employer visa", "employment visa", "need sponsor", "sponsorship",
+            "tourist visa", "visit visa", "no visa", "expired"
+        ]
+        
+        for keyword in invalid_keywords:
+            if keyword in candidate_reply_lower:
+                log("INFO", f"Fallback detected INVALID keyword: '{keyword}'")
+                return False
+        
+        for keyword in valid_keywords:
+            if keyword in candidate_reply_lower:
+                log("INFO", f"Fallback detected VALID keyword: '{keyword}'")
+                return True
+        
+        log("WARN", f"Fallback couldn't determine visa status. Defaulting to VALID to avoid false rejections.")
+        return True  # Default to valid to avoid wrongly rejecting candidates
 
 
 def create_email_message(to_email: str, subject: str, body: str) -> dict:
