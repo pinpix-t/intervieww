@@ -42,13 +42,24 @@ COMPANY_NAME = "Printerpix"
 INTERVIEW_BASE_URL = "https://intervieww-fw4n.vercel.app/interview"
 LOOP_INTERVAL_SECONDS = 60  # How often to run the pipeline
 
-VISA_CHECK_PROMPT = """The candidate was asked 'Are you on an Employer Visa or a Personal Visa?'.
+VISA_CHECK_PROMPT = """The candidate was asked about their visa/work authorization status.
 
 Their reply: '{reply_text}'
 
-Analyze their response and determine if they have valid work authorization.
-- Personal Visa, Green Card, Golden Visa, Permanent Resident = TRUE (valid)
-- Employer Visa, Needs Sponsorship, Work Permit Required = FALSE (not valid)
+Analyze their response and determine if they have valid work authorization that allows them to work with a NEW employer without sponsorship.
+
+VALID (return true):
+- Personal Visa, Golden Visa, Green Card, Permanent Resident
+- Freelance Visa, Investor Visa, Family Visa
+- UAE National, GCC National, Citizen
+- Already has work permit / residency that allows job change
+
+INVALID (return false):
+- Employer Visa / Employment Visa (tied to current employer)
+- Needs Sponsorship / Labour Transfer
+- Tourist Visa, Visit Visa
+- No valid visa / Expired visa
+- Student Visa (unless they specify they can work)
 
 Return ONLY a valid JSON object: {{"has_valid_visa": true}} or {{"has_valid_visa": false}}"""
 
