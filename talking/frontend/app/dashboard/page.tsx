@@ -13,9 +13,7 @@ interface Candidate {
   status: string;
   interview_transcript: string | null;
   resume_text: string | null;
-  jobs: {
-    title: string;
-  } | null;
+  jobs: { title: string }[] | null;
 }
 
 export default function DashboardPage() {
@@ -199,7 +197,7 @@ export default function DashboardPage() {
                     {/* Role */}
                     <td className="p-4">
                       <span className="text-slate-300">
-                        {candidate.jobs?.title || 'Not specified'}
+                        {candidate.jobs?.[0]?.title || 'Not specified'}
                       </span>
                     </td>
 
@@ -265,7 +263,7 @@ export default function DashboardPage() {
                 </div>
                 <div>
                   <h2 className="text-xl font-bold text-white">{selectedCandidate.full_name}</h2>
-                  <p className="text-slate-400">{selectedCandidate.jobs?.title || 'No role specified'}</p>
+                  <p className="text-slate-400">{selectedCandidate.jobs?.[0]?.title || 'No role specified'}</p>
                 </div>
               </div>
               <button
