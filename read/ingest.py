@@ -185,40 +185,56 @@ def mark_as_read(gmail, msg_id):
 
 
 # --- Resume Parsing with Gemini ---
-MIME_TYPES = {
-    ".pdf": "application/pdf",
-    ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-    ".doc": "application/msword",
-}
+def extract_text_from_docx(filepath):
+    """Extract text from a DOCX file using python-docx."""
+    from docx import Document
+    doc = Document(filepath)
+    full_text = []
+    for para in doc.paragraphs:
+        full_text.append(para.text)
+    return '\n'.join(full_text)
+
 
 def parse_resume(filepath):
     log("INFO", f"Parsing resume with Gemini: {filepath}")
     
     gemini_client = get_gemini()
-    
-    # Determine mime type from file extension
     ext = Path(filepath).suffix.lower()
-    mime_type = MIME_TYPES.get(ext)
     
-    if not mime_type:
-        log("WARN", f"Unknown file extension: {ext}, attempting upload without mime_type")
-        uploaded_file = gemini_client.files.upload(file=filepath)
+    # Handle DOCX/DOC files - extract text locally first
+    if ext in [".docx", ".doc"]:
+        try:
+            raw_text = extract_text_from_docx(filepath)
+            log("INFO", f"Extracted {len(raw_text)} chars from {ext} file")
+            
+            # Use Gemini to clean up and structure the text
+            response = gemini_client.models.generate_content(
+                model="gemini-2.0-flash",
+                contents=f"Clean up and format this resume text. Return it in a readable format:\n\n{raw_text}"
+            )
+            return response.text
+        except Exception as e:
+            log("ERROR", f"Failed to extract text from {ext}: {e}")
+            raise
+    
+    # Handle PDF files - upload to Gemini
+    elif ext == ".pdf":
+        uploaded_file = gemini_client.files.upload(file=filepath, config={"mime_type": "application/pdf"})
+        
+        response = gemini_client.models.generate_content(
+            model="gemini-2.0-flash",
+            contents=[
+                uploaded_file,
+                "Extract all text content from this resume PDF. Return the full text in a clean, readable format."
+            ]
+        )
+        
+        # Clean up uploaded file
+        gemini_client.files.delete(name=uploaded_file.name)
+        return response.text
+    
     else:
-        uploaded_file = gemini_client.files.upload(file=filepath, config={"mime_type": mime_type})
-    
-    # Use Gemini to extract text
-    response = gemini_client.models.generate_content(
-        model="gemini-2.0-flash",
-        contents=[
-            uploaded_file,
-            "Extract all text content from this resume document. Return the full text in a clean, readable format."
-        ]
-    )
-    
-    # Clean up uploaded file
-    gemini_client.files.delete(name=uploaded_file.name)
-    
-    return response.text
+        raise ValueError(f"Unsupported file type: {ext}")
 
 
 # --- Supabase ---
