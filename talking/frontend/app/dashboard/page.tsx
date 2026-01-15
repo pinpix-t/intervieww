@@ -13,7 +13,8 @@ interface Candidate {
   status: string;
   interview_transcript: string | null;
   resume_text: string | null;
-  jobs: { title: string }[] | null;
+  job_id: string | null;
+  job_title?: string;
 }
 
 export default function DashboardPage() {
@@ -24,17 +25,39 @@ export default function DashboardPage() {
   useEffect(() => {
     const fetchCandidates = async () => {
       try {
-        const { data, error } = await supabase
+        // Fetch candidates
+        const { data: candidatesData, error: candidatesError } = await supabase
           .from('candidates')
-          .select('id, full_name, email, rating, ai_summary, status, interview_transcript, resume_text, jobs(title)')
+          .select('id, full_name, email, rating, ai_summary, status, interview_transcript, resume_text, job_id')
           .order('rating', { ascending: false, nullsFirst: false });
 
-        if (error) {
-          console.error('Error fetching candidates:', error);
+        if (candidatesError) {
+          console.error('Error fetching candidates:', candidatesError);
           return;
         }
 
-        setCandidates(data || []);
+        // Fetch jobs
+        const { data: jobsData, error: jobsError } = await supabase
+          .from('jobs')
+          .select('id, title');
+
+        if (jobsError) {
+          console.error('Error fetching jobs:', jobsError);
+        }
+
+        // Create job lookup map
+        const jobMap = new Map<string, string>();
+        jobsData?.forEach(job => {
+          jobMap.set(job.id, job.title);
+        });
+
+        // Merge job titles into candidates
+        const candidatesWithJobs = (candidatesData || []).map(candidate => ({
+          ...candidate,
+          job_title: candidate.job_id ? jobMap.get(candidate.job_id) || 'Unknown Role' : undefined,
+        }));
+
+        setCandidates(candidatesWithJobs);
       } catch (err) {
         console.error('Failed to fetch candidates:', err);
       } finally {
@@ -197,7 +220,7 @@ export default function DashboardPage() {
                     {/* Role */}
                     <td className="p-4">
                       <span className="text-slate-300">
-                        {candidate.jobs?.[0]?.title || 'Not specified'}
+                        {candidate.job_title || 'Not specified'}
                       </span>
                     </td>
 
@@ -263,7 +286,7 @@ export default function DashboardPage() {
                 </div>
                 <div>
                   <h2 className="text-xl font-bold text-white">{selectedCandidate.full_name}</h2>
-                  <p className="text-slate-400">{selectedCandidate.jobs?.[0]?.title || 'No role specified'}</p>
+                  <p className="text-slate-400">{selectedCandidate.job_title || 'No role specified'}</p>
                 </div>
               </div>
               <button
