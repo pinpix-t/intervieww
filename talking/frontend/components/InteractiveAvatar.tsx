@@ -409,6 +409,16 @@ export default function InteractiveAvatar({
         setCallStatus('ended');
       });
 
+      // Capture Wayne's AI-generated responses
+      avatar.on(StreamingEvents.AVATAR_TALKING_MESSAGE, (event: { detail?: { message?: string } }) => {
+        console.log('[HeyGen Event] AVATAR_TALKING_MESSAGE:', event);
+        if (event?.detail?.message) {
+          const wayneResponse = event.detail.message;
+          console.log(`[Transcript] Wayne (AI): ${wayneResponse}`);
+          addToConversation('interviewer', wayneResponse);
+        }
+      });
+
       // Start avatar session
       console.log('Creating avatar session...');
       try {
