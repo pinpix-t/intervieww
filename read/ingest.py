@@ -185,20 +185,33 @@ def mark_as_read(gmail, msg_id):
 
 
 # --- Resume Parsing with Gemini ---
+MIME_TYPES = {
+    ".pdf": "application/pdf",
+    ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    ".doc": "application/msword",
+}
+
 def parse_resume(filepath):
     log("INFO", f"Parsing resume with Gemini: {filepath}")
     
     gemini_client = get_gemini()
     
-    # Upload file to Gemini
-    uploaded_file = gemini_client.files.upload(file=filepath)
+    # Determine mime type from file extension
+    ext = Path(filepath).suffix.lower()
+    mime_type = MIME_TYPES.get(ext)
+    
+    if not mime_type:
+        log("WARN", f"Unknown file extension: {ext}, attempting upload without mime_type")
+        uploaded_file = gemini_client.files.upload(file=filepath)
+    else:
+        uploaded_file = gemini_client.files.upload(file=filepath, config={"mime_type": mime_type})
     
     # Use Gemini to extract text
     response = gemini_client.models.generate_content(
         model="gemini-2.0-flash",
         contents=[
             uploaded_file,
-            "Extract all text content from this resume PDF. Return the full text in a clean, readable format."
+            "Extract all text content from this resume document. Return the full text in a clean, readable format."
         ]
     )
     
