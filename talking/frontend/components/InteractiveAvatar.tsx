@@ -7,12 +7,16 @@ import StreamingAvatar, {
   TaskType,
 } from '@heygen/streaming-avatar';
 import { Mic, MicOff, Camera, CameraOff, PhoneOff, Loader2 } from 'lucide-react';
+import { generateDossier } from '@/app/actions/generateDossier';
+import { generateFinalVerdict } from '@/app/actions/generateFinalVerdict';
 
 interface InteractiveAvatarProps {
   candidateId: string;
   candidateName: string;
   jobDescription: string;
   resumeText: string;
+  round?: 1 | 2;
+  dossier?: string[];
 }
 
 // Conversation tracking types
@@ -30,6 +34,8 @@ export default function InteractiveAvatar({
   candidateName,
   jobDescription,
   resumeText,
+  round = 1,
+  dossier,
 }: InteractiveAvatarProps) {
   // Call state
   const [callStatus, setCallStatus] = useState<CallStatus>('idle');
@@ -104,7 +110,8 @@ export default function InteractiveAvatar({
     }
   }, [callStatus, applyStreamToVideo]);
 
-  const systemPrompt = `=== YOUR IDENTITY ===
+  // Round 1 (Wayne) - Personality/Drive assessment
+  const round1Prompt = `=== YOUR IDENTITY ===
   NAME: Wayne
   ROLE: Elite Talent Scout at Printerpix.
   VIBE: You are warm but incredibly sharp. You are NOT checking boxes. You are hunting for "A-Players" (top 1% talent).
@@ -138,17 +145,53 @@ export default function InteractiveAvatar({
   
   Begin now.`;
 
+  // Round 2 (Atlas) - Technical verification
+  const dossierQuestions = dossier?.map((q, i) => `${i + 1}. ${q}`).join('\n') || 'No specific questions prepared.';
+  
+  const round2Prompt = `=== YOUR IDENTITY ===
+  NAME: Atlas
+  ROLE: Senior Technical Architect at Printerpix.
+  VIBE: You are professional, direct, and technical. You respect competence and have zero tolerance for BS or buzzwords.
+  GOAL: Verify that ${candidateName} actually has the technical depth they claimed in their first interview.
+  
+  === THE CANDIDATE ===
+  NAME: ${candidateName}
+  JOB: ${jobDescription}
+  
+  === CONTEXT ===
+  This candidate passed Round 1 (personality/drive assessment). Now YOU need to verify their technical claims.
+  
+  === TECHNICAL PROBE QUESTIONS (FROM ROUND 1 ANALYSIS) ===
+  These are specific technical claims they made. Dig into each one:
+  ${dossierQuestions}
+  
+  === INTERVIEW RULES (SHOW ME THE CODE MODE) ===
+  1. **Verify, Don't Accept:** If they say "I optimized the database," ask HOW. What indexes? What query plans? What was the before/after latency?
+  2. **Follow Up Relentlessly:** If they give a surface-level answer, dig deeper. "Walk me through the exact steps."
+  3. **Test Understanding:** Ask them to explain tradeoffs. "Why did you choose X over Y?"
+  4. **Expose Gaps:** It's OK to find gaps. Say "Interesting. So you're less experienced with X? That's fine, just want to understand your level."
+  5. **NEVER PRETEND TO BE THE CANDIDATE:** You are Atlas the interviewer. NEVER describe YOUR work history or experience. Ask THEM questions.
+  
+  === STARTING THE INTERVIEW ===
+  Welcome them back warmly but quickly transition to technical verification.
+  Example: "Good to see you again, ${candidateName}. I've reviewed your conversation with Wayne. You mentioned some interesting technical work. Let's dive into the details."
+  
+  Begin now.`;
+
+  const systemPrompt = round === 2 ? round2Prompt : round1Prompt;
+  const interviewerName = round === 2 ? 'Atlas' : 'Wayne';
+
   // Add entry to conversation history
   const addToConversation = useCallback((role: 'interviewer' | 'candidate', text: string) => {
     const entry: ConversationEntry = {
       role,
-      speaker: role === 'interviewer' ? 'Wayne' : candidateName,
+      speaker: role === 'interviewer' ? interviewerName : candidateName,
       text: text.trim(),
       timestamp: new Date(),
     };
     conversationHistoryRef.current.push(entry);
     console.log(`[Transcript] ${entry.speaker}: ${entry.text}`);
-  }, [candidateName]);
+  }, [candidateName, interviewerName]);
 
   // Send transcript to avatar (candidate speaking -> interviewer responds)
   const sendToAvatar = useCallback(async (text: string) => {
@@ -409,13 +452,13 @@ export default function InteractiveAvatar({
         setCallStatus('ended');
       });
 
-      // Capture Wayne's AI-generated responses
+      // Capture AI-generated responses
       avatar.on(StreamingEvents.AVATAR_TALKING_MESSAGE, (event: { detail?: { message?: string } }) => {
         console.log('[HeyGen Event] AVATAR_TALKING_MESSAGE:', event);
         if (event?.detail?.message) {
-          const wayneResponse = event.detail.message;
-          console.log(`[Transcript] Wayne (AI): ${wayneResponse}`);
-          addToConversation('interviewer', wayneResponse);
+          const aiResponse = event.detail.message;
+          console.log(`[Transcript] ${round === 2 ? 'Atlas' : 'Wayne'} (AI): ${aiResponse}`);
+          addToConversation('interviewer', aiResponse);
         }
       });
 
@@ -444,8 +487,10 @@ export default function InteractiveAvatar({
 
       setCallStatus('active');
 
-      // Welcome message - Talent Scout opens with energy
-      const welcomeMessage = `Hey ${candidateName}! Great to meet you. How are you doing today?`;
+      // Welcome message - varies by round
+      const welcomeMessage = round === 2
+        ? `Welcome back, ${candidateName}. I'm Atlas from the technical team. I've reviewed your conversation with Wayne, and now I'd like to dive deeper into some of the things you mentioned. Ready to get started?`
+        : `Hey ${candidateName}! Great to meet you. How are you doing today?`;
       addToConversation('interviewer', welcomeMessage);
       await avatar.speak({
         text: welcomeMessage,
@@ -539,22 +584,60 @@ END OF INTERVIEW
     const formattedTranscript = formatTranscript();
     
     try {
-      console.log('[End Interview] Sending transcript for AI analysis...');
-      const response = await fetch('/api/end-interview', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          candidateId,
-          transcript: formattedTranscript,
-        }),
-      });
+      if (round === 2) {
+        // Round 2: Save transcript and generate final verdict
+        console.log('[End Interview] Round 2 - Saving transcript and generating final verdict...');
+        
+        // First save the Round 2 transcript via API
+        const response = await fetch('/api/end-interview-round2', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            candidateId,
+            transcript: formattedTranscript,
+          }),
+        });
 
-      if (!response.ok) {
-        throw new Error('Failed to analyze interview');
+        if (!response.ok) {
+          console.error('[End Interview] Failed to save Round 2 transcript');
+        }
+
+        // Generate final verdict
+        const verdictResult = await generateFinalVerdict(candidateId);
+        if (verdictResult.success) {
+          console.log('[End Interview] Final verdict:', verdictResult.verdict);
+        } else {
+          console.error('[End Interview] Verdict generation failed:', verdictResult.error);
+        }
+      } else {
+        // Round 1: Analyze interview and generate dossier for Round 2
+        console.log('[End Interview] Round 1 - Analyzing and generating dossier...');
+        
+        const response = await fetch('/api/end-interview', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            candidateId,
+            transcript: formattedTranscript,
+          }),
+        });
+
+        if (!response.ok) {
+          throw new Error('Failed to analyze interview');
+        }
+
+        const result = await response.json();
+        console.log('[End Interview] Analysis complete:', result.analysis);
+
+        // Auto-generate dossier for Round 2
+        console.log('[End Interview] Generating dossier for Round 2...');
+        const dossierResult = await generateDossier(candidateId);
+        if (dossierResult.success) {
+          console.log('[End Interview] Dossier generated:', dossierResult.dossier);
+        } else {
+          console.error('[End Interview] Dossier generation failed:', dossierResult.error);
+        }
       }
-
-      const result = await response.json();
-      console.log('[End Interview] Analysis complete:', result.analysis);
     } catch (err) {
       console.error('[End Interview] Analysis failed:', err);
       // Still proceed to ended state even if analysis fails
@@ -590,7 +673,10 @@ END OF INTERVIEW
             Printerpix Interview
           </h1>
           <p className="text-gray-400 mb-8">
-            Hi {candidateName}! Click below to start your interview with Wayne.
+            {round === 2 
+              ? `Welcome back, ${candidateName}! Click below to start Round 2 with Atlas.`
+              : `Hi ${candidateName}! Click below to start your interview with Wayne.`
+            }
           </p>
           
           {error && (
@@ -628,18 +714,21 @@ END OF INTERVIEW
       <div className="w-full h-screen bg-gray-900 flex flex-col items-center justify-center">
         <div className="text-center max-w-md mx-auto p-8">
           <div className="relative w-24 h-24 mx-auto mb-6">
-            <Loader2 className="w-24 h-24 text-emerald-500 animate-spin" />
+            <Loader2 className={`w-24 h-24 ${round === 2 ? 'text-blue-500' : 'text-emerald-500'} animate-spin`} />
             <div className="absolute inset-0 flex items-center justify-center">
-              <svg className="w-10 h-10 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <svg className={`w-10 h-10 ${round === 2 ? 'text-blue-400' : 'text-emerald-400'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
               </svg>
             </div>
           </div>
           <h1 className="text-2xl font-bold text-white mb-3">
-            Analyzing Your Interview
+            {round === 2 ? 'Finalizing Your Assessment' : 'Analyzing Your Interview'}
           </h1>
           <p className="text-gray-400 mb-4">
-            Our AI is reviewing your responses...
+            {round === 2 
+              ? 'Our AI is generating your final verdict...'
+              : 'Our AI is reviewing your responses...'
+            }
           </p>
           <p className="text-gray-500 text-sm">
             This usually takes a few seconds
@@ -654,16 +743,19 @@ END OF INTERVIEW
     return (
       <div className="w-full h-screen bg-gray-900 flex flex-col items-center justify-center">
         <div className="text-center max-w-md mx-auto p-8">
-          <div className="w-24 h-24 bg-emerald-500/20 rounded-full flex items-center justify-center mx-auto mb-6">
-            <svg className="w-12 h-12 text-emerald-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <div className={`w-24 h-24 ${round === 2 ? 'bg-blue-500/20' : 'bg-emerald-500/20'} rounded-full flex items-center justify-center mx-auto mb-6`}>
+            <svg className={`w-12 h-12 ${round === 2 ? 'text-blue-500' : 'text-emerald-500'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
             </svg>
           </div>
           <h1 className="text-3xl font-bold text-white mb-3">
-            Interview Complete
+            {round === 2 ? 'All Rounds Complete!' : 'Round 1 Complete'}
           </h1>
           <p className="text-gray-400 mb-8">
-            Thank you for your time, {candidateName}! We&apos;ll be in touch soon.
+            {round === 2 
+              ? `Thank you for completing both interview rounds, ${candidateName}! Our hiring team will review your performance and be in touch soon.`
+              : `Great job, ${candidateName}! If you pass this round, you'll be invited to a technical interview.`
+            }
           </p>
           <a
             href="https://printerpix.com"
@@ -704,9 +796,9 @@ END OF INTERVIEW
 
       {/* Avatar Speaking Indicator */}
       {isAvatarTalking && (
-        <div className="absolute top-6 left-6 px-4 py-2 bg-emerald-500/90 rounded-full text-white text-sm flex items-center gap-2 z-10">
+        <div className={`absolute top-6 left-6 px-4 py-2 ${round === 2 ? 'bg-blue-500/90' : 'bg-emerald-500/90'} rounded-full text-white text-sm flex items-center gap-2 z-10`}>
           <span className="w-2 h-2 bg-white rounded-full animate-pulse" />
-          Wayne is speaking...
+          {interviewerName} is speaking...
         </div>
       )}
 
