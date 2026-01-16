@@ -221,17 +221,17 @@ def parse_resume(filepath):
     elif ext == ".pdf":
         uploaded_file = gemini_client.files.upload(file=filepath, config={"mime_type": "application/pdf"})
         
-    response = gemini_client.models.generate_content(
-        model="gemini-2.0-flash",
-        contents=[
-            uploaded_file,
-            "Extract all text content from this resume PDF. Return the full text in a clean, readable format."
-        ]
-    )
-    
-    # Clean up uploaded file
-    gemini_client.files.delete(name=uploaded_file.name)
-    return response.text
+        response = gemini_client.models.generate_content(
+            model="gemini-2.0-flash",
+            contents=[
+                uploaded_file,
+                "Extract all text content from this resume PDF. Return the full text in a clean, readable format."
+            ]
+        )
+        
+        # Clean up uploaded file
+        gemini_client.files.delete(name=uploaded_file.name)
+        return response.text
     
     else:
         raise ValueError(f"Unsupported file type: {ext}")
