@@ -202,9 +202,10 @@ export default function InteractiveAvatar({
       // Log candidate's message to conversation history
       addToConversation('candidate', text);
       setTranscript('');
+      // Use REPEAT to trigger AI response based on knowledgeBase, not TALK which just speaks verbatim
       await avatarRef.current.speak({
         text: text,
-        taskType: TaskType.TALK,
+        taskType: TaskType.REPEAT,
       });
     } catch (err) {
       console.error('Failed to send to avatar:', err);
