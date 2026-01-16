@@ -41,13 +41,27 @@ export async function POST(request: Request) {
       conversationContext += '=== END CONVERSATION ===\n';
     }
 
-    // Full prompt
-    const fullPrompt = `${systemPrompt}
+    // Full prompt - VERY explicit about roles
+    const fullPrompt = `=== CRITICAL INSTRUCTION ===
+YOU ARE THE INTERVIEWER. You are asking questions.
+THE CANDIDATE is the person being interviewed. They are answering your questions.
+NEVER describe your own experience or background. You have none. You only ask questions.
+
+${systemPrompt}
 ${conversationContext}
 
-The candidate just said: "${message}"
+=== WHAT THE CANDIDATE JUST SAID ===
+"${message}"
 
-Respond as the interviewer. Keep your response conversational and natural (1-3 sentences typically). Do NOT use asterisks, markdown, or stage directions. Just speak naturally as if you're having a real conversation.`;
+=== YOUR TASK ===
+Generate ONLY what the interviewer (you) would say next.
+- Ask a follow-up question or probe deeper
+- Keep it to 1-3 sentences
+- Be conversational, not robotic
+- NEVER say "I have experience in..." or describe YOUR work - you are the interviewer, not the candidate
+- Do NOT use asterisks, markdown, or stage directions
+
+YOUR RESPONSE:`;
 
     const result = await model.generateContent(fullPrompt);
     const reply = result.response.text().trim();
