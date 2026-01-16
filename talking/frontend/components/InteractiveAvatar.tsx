@@ -193,24 +193,44 @@ export default function InteractiveAvatar({
     console.log(`[Transcript] ${entry.speaker}: ${entry.text}`);
   }, [candidateName, interviewerName]);
 
-  // Send transcript to avatar (candidate speaking -> interviewer responds)
+  // Send transcript to avatar (candidate speaking -> Gemini generates response -> avatar speaks)
   const sendToAvatar = useCallback(async (text: string) => {
     if (!text.trim() || !avatarRef.current || callStatus !== 'active') return;
 
     try {
-      console.log('Sending to avatar:', text);
+      console.log('Candidate said:', text);
       // Log candidate's message to conversation history
       addToConversation('candidate', text);
       setTranscript('');
-      // Use REPEAT to trigger AI response based on knowledgeBase, not TALK which just speaks verbatim
+      
+      // Call Gemini to generate interviewer response
+      const response = await fetch('/api/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          message: text,
+          systemPrompt: systemPrompt,
+          history: conversationHistoryRef.current,
+        }),
+      });
+      
+      if (!response.ok) {
+        throw new Error('Failed to get AI response');
+      }
+      
+      const { reply } = await response.json();
+      console.log('Gemini response:', reply);
+      
+      // Log interviewer's response and have avatar speak it
+      addToConversation('interviewer', reply);
       await avatarRef.current.speak({
-        text: text,
-        taskType: TaskType.REPEAT,
+        text: reply,
+        taskType: TaskType.TALK,
       });
     } catch (err) {
-      console.error('Failed to send to avatar:', err);
+      console.error('Failed to get AI response:', err);
     }
-  }, [callStatus, addToConversation]);
+  }, [callStatus, addToConversation, systemPrompt]);
 
   // Initialize user camera
   const initUserCamera = async () => {
