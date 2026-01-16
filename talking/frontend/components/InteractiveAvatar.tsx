@@ -469,29 +469,18 @@ export default function InteractiveAvatar({
         setCallStatus('ended');
       });
 
-      // Capture AI-generated responses
-      avatar.on(StreamingEvents.AVATAR_TALKING_MESSAGE, (event: { detail?: { message?: string } }) => {
-        console.log('[HeyGen Event] AVATAR_TALKING_MESSAGE:', event);
-        if (event?.detail?.message) {
-          const aiResponse = event.detail.message;
-          console.log(`[Transcript] ${round === 2 ? 'Atlas' : 'Wayne'} (AI): ${aiResponse}`);
-          addToConversation('interviewer', aiResponse);
-        }
-      });
+      // NOTE: Removed AVATAR_TALKING_MESSAGE listener - we manually add to conversation
+      // in sendToAvatar and welcome message. This prevents polluted history.
 
-      // Start avatar session (Gemini handles AI conversation, HeyGen just speaks)
-      // Short knowledgeBase prevents HeyGen from auto-introducing as "HeyGen AI"
-      const shortIdentity = round === 2
-        ? 'You are Atlas, a technical interviewer at Printerpix. Only speak what you are told. Never mention HeyGen or AI.'
-        : 'You are Wayne, an interviewer at Printerpix. Only speak what you are told. Never mention HeyGen or AI.';
-      
+      // Start avatar session - NO knowledgeBase so HeyGen has no AI brain
+      // HeyGen only speaks what we explicitly tell it via speak() with TaskType.TALK
+      // Gemini is the ONLY brain that generates responses
       console.log('Creating avatar session...');
       try {
         await avatar.createStartAvatar({
           quality: AvatarQuality.Medium,
           avatarName: 'Wayne_20240711',
           language: 'en',
-          knowledgeBase: shortIdentity,
         });
         console.log('Avatar session created successfully!');
       } catch (avatarError) {
@@ -502,7 +491,6 @@ export default function InteractiveAvatar({
           quality: AvatarQuality.Medium,
           avatarName: 'josh_lite3_20230714',  // Fallback public avatar
           language: 'en',
-          knowledgeBase: shortIdentity,
         });
         console.log('Fallback avatar created!');
       }
