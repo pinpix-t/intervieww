@@ -10,7 +10,7 @@ from email.utils import parseaddr
 
 # dotenv is optional - Railway provides env vars directly
 try:
-from dotenv import load_dotenv
+    from dotenv import load_dotenv
 except ImportError:
     def load_dotenv():
         pass  # No-op in production
