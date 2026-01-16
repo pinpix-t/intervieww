@@ -483,14 +483,13 @@ export default function InteractiveAvatar({
         }
       });
 
-      // Start avatar session
+      // Start avatar session (Gemini handles AI conversation, HeyGen just speaks)
       console.log('Creating avatar session...');
       try {
         await avatar.createStartAvatar({
           quality: AvatarQuality.Medium,
           avatarName: 'Wayne_20240711',
           language: 'en',
-          knowledgeBase: systemPrompt,
         });
         console.log('Avatar session created successfully!');
       } catch (avatarError) {
@@ -501,7 +500,6 @@ export default function InteractiveAvatar({
           quality: AvatarQuality.Medium,
           avatarName: 'josh_lite3_20230714',  // Fallback public avatar
           language: 'en',
-          knowledgeBase: systemPrompt,
         });
         console.log('Fallback avatar created!');
       }
