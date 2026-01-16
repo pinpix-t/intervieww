@@ -12,6 +12,7 @@ interface Candidate {
   email: string;
   rating: number | null;
   round_2_rating: number | null;
+  jd_match_score: number | null; // CV Score from screener
   ai_summary: string | null;
   status: string;
   current_stage: string | null;
@@ -45,11 +46,12 @@ export default function DashboardPage() {
   useEffect(() => {
     const fetchData = async () => {
       try {
-        // Fetch candidates with all round data
+        // Fetch candidates with all round data (increased limit to 5000)
         const { data: candidatesData, error: candidatesError } = await supabase
           .from('candidates')
-          .select('id, full_name, email, rating, round_2_rating, ai_summary, status, current_stage, interview_transcript, round_2_transcript, resume_text, job_id, final_verdict, interview_token')
-          .order('rating', { ascending: false, nullsFirst: false });
+          .select('id, full_name, email, rating, round_2_rating, jd_match_score, ai_summary, status, current_stage, interview_transcript, round_2_transcript, resume_text, job_id, final_verdict, interview_token')
+          .order('rating', { ascending: false, nullsFirst: false })
+          .range(0, 4999); // Fetch up to 5000 candidates
 
         if (candidatesError) {
           console.error('Error fetching candidates:', candidatesError);
@@ -282,6 +284,7 @@ export default function DashboardPage() {
                 <th className="text-left text-slate-400 font-medium p-4">#</th>
                 <th className="text-left text-slate-400 font-medium p-4">Name</th>
                 <th className="text-left text-slate-400 font-medium p-4">Role</th>
+                <th className="text-left text-slate-400 font-medium p-4">CV</th>
                 <th className="text-left text-slate-400 font-medium p-4">Stage</th>
                 <th className="text-left text-slate-400 font-medium p-4">Scores</th>
                 <th className="text-left text-slate-400 font-medium p-4">Verdict</th>
@@ -319,6 +322,21 @@ export default function DashboardPage() {
                       <span className="text-slate-300 text-sm">
                         {candidate.job_title || '—'}
                       </span>
+                    </td>
+
+                    {/* CV Score */}
+                    <td className="p-4">
+                      {candidate.jd_match_score !== null ? (
+                        <span className={`px-2 py-1 rounded-full text-xs font-semibold ${
+                          candidate.jd_match_score >= 70 ? 'bg-emerald-500/20 text-emerald-400' :
+                          candidate.jd_match_score >= 50 ? 'bg-yellow-500/20 text-yellow-400' :
+                          'bg-red-500/20 text-red-400'
+                        }`}>
+                          {candidate.jd_match_score}
+                        </span>
+                      ) : (
+                        <span className="text-slate-500 text-sm">—</span>
+                      )}
                     </td>
 
                     {/* Stage */}
