@@ -95,10 +95,14 @@ export default function DashboardPage() {
     if (roleFilter !== 'all' && c.job_id !== roleFilter) return false;
     if (stageFilter !== 'all') {
       const stage = c.current_stage || 'round_1';
-      if (stageFilter === 'round_1' && stage !== 'round_1') return false;
-      if (stageFilter === 'round_2' && stage !== 'round_2') return false;
-      if (stageFilter === 'completed' && stage !== 'completed') return false;
+      // Not Interviewed = no rating yet
       if (stageFilter === 'not_interviewed' && c.rating !== null) return false;
+      // Round 1 Done = has rating AND still in round_1 stage
+      if (stageFilter === 'round_1' && (c.rating === null || stage !== 'round_1')) return false;
+      // In Round 2
+      if (stageFilter === 'round_2' && stage !== 'round_2') return false;
+      // Completed
+      if (stageFilter === 'completed' && stage !== 'completed') return false;
     }
     return true;
   });
