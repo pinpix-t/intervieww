@@ -46,17 +46,34 @@ export default function DashboardPage() {
   useEffect(() => {
     const fetchData = async () => {
       try {
-        // Fetch candidates with all round data (increased limit to 5000)
-        const { data: candidatesData, error: candidatesError } = await supabase
-          .from('candidates')
-          .select('id, full_name, email, rating, round_2_rating, jd_match_score, ai_summary, status, current_stage, interview_transcript, round_2_transcript, resume_text, job_id, final_verdict, interview_token')
-          .order('rating', { ascending: false, nullsFirst: false })
-          .range(0, 4999); // Fetch up to 5000 candidates
+        // Fetch candidates in batches of 1000 (Supabase limit workaround)
+        let allCandidates: any[] = [];
+        let hasMore = true;
+        let offset = 0;
+        const BATCH_SIZE = 1000;
 
-        if (candidatesError) {
-          console.error('Error fetching candidates:', candidatesError);
-          return;
+        while (hasMore) {
+          const { data: batch, error } = await supabase
+            .from('candidates')
+            .select('id, full_name, email, rating, round_2_rating, jd_match_score, ai_summary, status, current_stage, interview_transcript, round_2_transcript, resume_text, job_id, final_verdict, interview_token')
+            .order('rating', { ascending: false, nullsFirst: false })
+            .range(offset, offset + BATCH_SIZE - 1);
+
+          if (error) {
+            console.error('Error fetching candidates batch:', error);
+            break;
+          }
+
+          if (batch && batch.length > 0) {
+            allCandidates = [...allCandidates, ...batch];
+            offset += BATCH_SIZE;
+            hasMore = batch.length === BATCH_SIZE;
+          } else {
+            hasMore = false;
+          }
         }
+
+        console.log(`Fetched ${allCandidates.length} total candidates`);
 
         // Fetch jobs
         const { data: jobsData, error: jobsError } = await supabase
@@ -76,7 +93,7 @@ export default function DashboardPage() {
         });
 
         // Merge job titles into candidates
-        const candidatesWithJobs = (candidatesData || []).map(candidate => ({
+        const candidatesWithJobs = allCandidates.map(candidate => ({
           ...candidate,
           job_title: candidate.job_id ? jobMap.get(candidate.job_id) || 'Unknown Role' : undefined,
         }));
